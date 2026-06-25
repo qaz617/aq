@@ -1,0 +1,93 @@
+name: Build sing-box
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: '1.23.4'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Get latest version
+        id: get_version
+        run: |
+          VERSION=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep '"tag_name"' | cut -d '"' -f 4)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Latest version: $VERSION"
+
+  compile:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            output: sing-box-linux-amd64
+          - goos: android
+            goarch: arm64
+            output: sing-box-android-arm64
+          - goos: darwin
+            goarch: arm64
+            output: sing-box-darwin-arm64
+
+    steps:
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Checkout sing-box
+        uses: actions/checkout@v4
+        with:
+          repository: SagerNet/sing-box
+          ref: ${{ needs.build.outputs.version }}
+          path: sing-box
+
+      - name: Build
+        working-directory: sing-box
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -trimpath \
+            -ldflags "-s -w -X 'github.com/sagernet/sing-box/constant.Version=${{ needs.build.outputs.version }}'" \
+            -tags "with_quic,with_utls,with_clash_api,with_gvisor,with_cloudflared" \
+            -o sing-box \
+            ./cmd/sing-box
+
+      - name: Package
+        run: zip ${{ matrix.output }}.zip sing-box
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output }}
+          path: ${{ matrix.output }}.zip
+
+  release:
+    needs: [build, compile]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build.outputs.version }}
+          name: sing-box ${{ needs.build.outputs.version }}
+          files: |
+            sing-box-linux-amd64/sing-box-linux-amd64.zip
+            sing-box-android-arm64/sing-box-android-arm64.zip
+            sing-box-darwin-arm64/sing-box-darwin-arm64.zip
+          generate_release_notes: true
