@@ -66,6 +66,7 @@ jobs:
             ./cmd/sing-box
 
       - name: Package
+        working-directory: sing-box
         run: zip ${{ matrix.output }}.zip sing-box
 
       - name: Upload artifact
