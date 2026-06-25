@@ -16,13 +16,17 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
+      is_prerelease: ${{ steps.get_version.outputs.is_prerelease }}
     steps:
       - name: Get latest version
         id: get_version
         run: |
-          VERSION=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep '"tag_name"' | cut -d '"' -f 4)
+          LATEST=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases | jq -r '.[0]')
+          VERSION=$(echo "$LATEST" | jq -r '.tag_name')
+          IS_PRERELEASE=$(echo "$LATEST" | jq -r '.prerelease')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Latest version: $VERSION"
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+          echo "Latest version: $VERSION (prerelease: $IS_PRERELEASE)"
 
   compile:
     needs: build
@@ -66,14 +70,10 @@ jobs:
             -tags "with_quic,with_utls,with_clash_api,with_gvisor,with_cloudflared" \
             -o sing-box \
             ./cmd/sing-box
-          ls -la sing-box
 
       - name: Package
         working-directory: sing-box
-        run: |
-          ls -la
-          zip ${{ matrix.output }}.zip sing-box
-          ls -la *.zip
+        run: zip ${{ matrix.output }}.zip sing-box
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -93,6 +93,7 @@ jobs:
         with:
           tag_name: ${{ needs.build.outputs.version }}
           name: sing-box ${{ needs.build.outputs.version }}
+          prerelease: ${{ needs.build.outputs.is_prerelease == 'true' }}
           files: |
             sing-box-linux-amd64/sing-box-linux-amd64.zip
             sing-box-android-arm64/sing-box-android-arm64.zip
