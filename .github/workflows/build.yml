@@ -45,6 +45,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache: false
 
       - name: Checkout sing-box
         uses: actions/checkout@v4
@@ -58,22 +59,27 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
         run: |
           go build -trimpath \
             -ldflags "-s -w -X 'github.com/sagernet/sing-box/constant.Version=${{ needs.build.outputs.version }}'" \
             -tags "with_quic,with_utls,with_clash_api,with_gvisor,with_cloudflared" \
             -o sing-box \
             ./cmd/sing-box
+          ls -la sing-box
 
       - name: Package
         working-directory: sing-box
-        run: zip ${{ matrix.output }}.zip sing-box
+        run: |
+          ls -la
+          zip ${{ matrix.output }}.zip sing-box
+          ls -la *.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.output }}
-          path: ${{ matrix.output }}.zip
+          path: sing-box/${{ matrix.output }}.zip
 
   release:
     needs: [build, compile]
